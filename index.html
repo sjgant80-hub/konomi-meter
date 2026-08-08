@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>konomi-meter · what did your AI actually cost, and what needed to leave the machine?</title>
+<meta name="description" content="Local-versus-cloud cost attribution by task type. Prices local runs instead of assuming they are free, and refuses to call escaped spend avoidable without evidence that the local tier could have done the work.">
+<style>
+:root{
+  --ink:#14181a; --ink-2:#394146; --ink-3:#656e75; --rule:#dce1e4; --paper:#f7fafa; --raise:#fff;
+  --accent:#155e75; --accent-soft:#e2eff3; --bad:#a3312c; --good:#1c6b46; --warn:#8a6a12; --flat:#8b9196;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#eaeff1; --ink-2:#b6c0c5; --ink-3:#848d94; --rule:#252c30; --paper:#0f1315; --raise:#161b1e;
+  --accent:#5cb8d4; --accent-soft:#112830; --bad:#e0817b; --good:#63c294; --warn:#d3ab4e; --flat:#727a80;
+}}
+:root[data-theme=dark]{
+  --ink:#eaeff1; --ink-2:#b6c0c5; --ink-3:#848d94; --rule:#252c30; --paper:#0f1315; --raise:#161b1e;
+  --accent:#5cb8d4; --accent-soft:#112830; --bad:#e0817b; --good:#63c294; --warn:#d3ab4e; --flat:#727a80;
+}
+:root[data-theme=light]{
+  --ink:#14181a; --ink-2:#394146; --ink-3:#656e75; --rule:#dce1e4; --paper:#f7fafa; --raise:#fff;
+  --accent:#155e75; --accent-soft:#e2eff3; --bad:#a3312c; --good:#1c6b46; --warn:#8a6a12; --flat:#8b9196;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+.wrap{max-width:1060px;margin:0 auto;padding:0 20px}
+h1,h2,h3{text-wrap:balance;margin:0}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{border-bottom:1px solid var(--rule);padding:34px 0 26px;background:var(--raise);position:relative}
+.eyebrow{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(26px,4vw,38px);letter-spacing:-.02em;margin:12px 0 10px;font-weight:650}
+.lede{color:var(--ink-2);max-width:66ch;font-size:17px}
+.theme{position:absolute;top:18px;right:20px;background:none;border:1px solid var(--rule);color:var(--ink-3);border-radius:5px;padding:6px 10px;font:600 11px/1 var(--mono);cursor:pointer}
+.claims{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:var(--rule);border-block:1px solid var(--rule)}
+.claim{background:var(--paper);padding:18px 20px}
+.claim h3{font-size:13px;margin-bottom:6px}
+.claim p{margin:0;font-size:13.5px;color:var(--ink-3);line-height:1.5}
+nav.tabs{display:flex;gap:2px;border-bottom:1px solid var(--rule);margin-top:30px;flex-wrap:wrap}
+nav.tabs button{appearance:none;background:none;border:0;border-bottom:2px solid transparent;font:600 13px/1 var(--sans);color:var(--ink-3);padding:11px 14px;cursor:pointer}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+nav.tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section[hidden]{display:none}
+.panel{padding:26px 0 44px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:14px}
+.row>div{flex:1;min-width:150px}
+label{display:block;font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+input{width:100%;background:var(--raise);color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:10px 11px;font:13px/1.5 var(--mono)}
+input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+button.go{background:var(--accent);color:var(--raise);border:0;border-radius:6px;padding:11px 18px;font:600 14px/1 var(--sans);cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.reading{margin-top:20px;border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:0 9px 9px 0;background:var(--raise);padding:20px 22px}
+.reading .k{font:700 10.5px/1 var(--mono);letter-spacing:.1em;color:var(--ink-3)}
+.reading .s{font-size:17px;margin-top:9px;line-height:1.5}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin-top:18px}
+.stat{background:var(--raise);padding:14px 12px;text-align:center}
+.stat .n{font:600 22px/1.15 var(--mono)}
+.stat .l{font:600 9.5px/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 10px/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.scroll{overflow-x:auto}
+.pill{display:inline-block;font:600 10px/1 var(--mono);letter-spacing:.05em;padding:4px 7px;border-radius:4px;background:var(--accent-soft)}
+.pill.AVOIDABLE{color:var(--bad)} .pill.NECESSARY{color:var(--good)} .pill.UNPROVEN{color:var(--warn)}
+.bar{height:9px;border-radius:5px;background:var(--rule);overflow:hidden;display:flex;margin-top:8px}
+.bar i{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font:11px/1 var(--mono);color:var(--ink-3)}
+.legend span::before{content:'';display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+.note{font-size:13px;color:var(--ink-3);margin-top:10px;max-width:74ch}
+footer{border-top:1px solid var(--rule);padding:26px 0 46px;color:var(--ink-3);font-size:13px;margin-top:20px}
+.bad{color:var(--bad)} .good{color:var(--good)} .warn{color:var(--warn)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <button class="theme" id="theme">THEME</button>
+    <div class="eyebrow">konomi-meter</div>
+    <h1>What did your AI actually cost — and what needed to leave the machine?</h1>
+    <p class="lede">Local inference gets priced at zero in every write-up, every dashboard, every "we
+      moved it on-prem and saved 100%". The moment one side of a comparison is zero, the comparison
+      stops being a decision. This prices both sides, attributes the spend by task type, and refuses to
+      call anything a saving without evidence the local tier could have done the work.</p>
+  </div>
+</header>
+
+<div class="claims">
+  <div class="claim">
+    <h3>Local is not free</h3>
+    <p>250W for forty seconds at 27p/kWh is about 0.075p. Small, and not zero — and that difference is
+       what lets you say "50× cheaper" instead of the useless "one costs money and one doesn't".</p>
+  </div>
+  <div class="claim">
+    <h3>Attribution by task type</h3>
+    <p>"You spent £41 on the frontier" prompts no decision. "Four bulk-classification jobs cost £38 of
+       it, and that job type runs locally in nine seconds" prompts exactly one.</p>
+  </div>
+  <div class="claim">
+    <h3>Cheaper is not the question</h3>
+    <p>Every remote call would have been cheaper locally. The question is whether local could have
+       <em>done</em> it — and without evidence the answer is UNPROVEN, kept out of the savings figure.</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="t-run" aria-selected="true" aria-controls="p-run">The month</button>
+    <button role="tab" id="t-why" aria-selected="false" aria-controls="p-why">How it works</button>
+  </nav>
+
+  <section class="panel" id="p-run" role="tabpanel" aria-labelledby="t-run">
+    <div class="row">
+      <div><label for="watts">Machine draw (W)</label><input id="watts" type="number" value="250"></div>
+      <div><label for="kwh">Electricity (£/kWh)</label><input id="kwh" type="number" step="0.01" value="0.27"></div>
+      <div><label for="inp">Frontier input (£/M)</label><input id="inp" type="number" step="0.1" value="3"></div>
+      <div><label for="outp">Frontier output (£/M)</label><input id="outp" type="number" step="0.1" value="15"></div>
+      <button class="go" id="run">Meter it</button>
+    </div>
+    <p class="note">An illustrative month of runs against a fictional workload. Nothing leaves the page.</p>
+    <div id="out"></div>
+  </section>
+
+  <section class="panel" id="p-why" role="tabpanel" aria-labelledby="t-why" hidden>
+    <h2 style="font-size:19px;margin-bottom:10px">The three verdicts on escaped spend</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Verdict</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill AVOIDABLE">AVOIDABLE</span></td><td>The local tier has a recorded success rate on this task type at or above the bar. This call did not need to leave the machine — and this is the <b>only</b> figure that may be called a saving.</td></tr>
+        <tr><td><span class="pill NECESSARY">NECESSARY</span></td><td>Local was tried on this task type and fell below the bar. Escaping was reasonable.</td></tr>
+        <tr><td><span class="pill UNPROVEN">UNPROVEN</span></td><td>Local was never tried, or not enough times for the rate to mean anything. <b>No claim either way</b>, and reported separately rather than folded into a saving.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">The fastest way to shrink your UNPROVEN column is to run the local tier on those
+      task types once and find out. The report names them in priority order.</p>
+
+    <h2 style="font-size:19px;margin:28px 0 10px">What the cost model excludes</h2>
+    <p class="note" style="margin-top:0;max-width:72ch">A cost model's exclusions <em>are</em> the model,
+      so they travel with every figure: the hardware purchase (unless you supply an amortisation rate —
+      most people already own the machine, and the marginal cost of one more run really is just the
+      power), your time waiting for a slow local run, and idle draw, cooling and the rest of the
+      building. This is a <b>marginal energy</b> cost and it is named as one.</p>
+
+    <h2 style="font-size:19px;margin:28px 0 10px">Sovereign share, measured twice</h2>
+    <p class="note" style="margin-top:0;max-width:72ch">A thousand cheap local calls and one expensive
+      frontier call is 99.9% local <em>by call count</em> and can be under 5% <em>by money</em>. Both are
+      reported, because the first is the one people quote and the second is the one on the bill.</p>
+
+    <h2 style="font-size:19px;margin:28px 0 10px">Honest limits</h2>
+    <ul class="note" style="max-width:72ch">
+      <li>A remote run recorded without token counts is <b>refused</b>, not priced at zero — that is how
+        spend disappears from a report.</li>
+      <li>An unrecognised tier throws rather than defaulting to free.</li>
+      <li>Success is a boolean you supply. If your definition of "the local model handled it" is
+        generous, so is every figure downstream.</li>
+      <li>This measures what you recorded. Work that never got logged is invisible, and nothing here
+        can tell you it is missing.</li>
+    </ul>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p style="margin:0 0 6px">Pure kernels, no dependencies, no network.</p>
+    <p style="margin:0"><a href="https://github.com/sjgant80-hub/konomi-meter">Source &amp; verification</a>
+      · prompt costs in <a href="https://sjgant80-hub.github.io/konomi-ablate/">konomi-ablate</a>
+      · gated by <a href="https://github.com/sjgant80-hub/witness">witness</a> · MIT</p>
+  </div>
+</footer>
+
+<script type="module">
+import { TIERS, tierOf } from './tariff.mjs';
+import { makeLedger, summary } from './ledger.mjs';
+import { classify, reading, AVOIDABLE, NECESSARY, UNPROVEN } from './escape.mjs';
+
+const $ = s => document.querySelector(s);
+const el = (t, c, txt) => { const n = document.createElement(t); if (c) n.className = c; if (txt != null) n.textContent = txt; return n; };
+const money = n => `£${n > 0 && n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
+
+$('#theme').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const sysDark = matchMedia('(prefers-color-scheme:dark)').matches;
+  document.documentElement.setAttribute('data-theme', cur ? (cur === 'dark' ? 'light' : 'dark') : (sysDark ? 'light' : 'dark'));
+};
+document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav.tabs button').forEach(x => {
+    const on = x === b; x.setAttribute('aria-selected', String(on));
+    $('#' + x.getAttribute('aria-controls')).hidden = !on;
+  });
+});
+
+const rep = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+const RUNS = [
+  // lint: entirely local, high volume, trivially cheap
+  ...rep(420, () => ({ taskType: 'lint', tier: 'T2', seconds: 3, ok: true })),
+  // summarise: local handles it well, and yet some escaped
+  ...rep(60, () => ({ taskType: 'summarise', tier: 'T2', seconds: 11, ok: true })),
+  ...rep(3, () => ({ taskType: 'summarise', tier: 'T2', seconds: 11, ok: false })),
+  ...rep(9, () => ({ taskType: 'summarise', tier: 'T4', seconds: 4, tokensIn: 12000, tokensOut: 3000, ok: true })),
+  // bulk-classify: the big one, and local has NEVER been tried
+  ...rep(14, () => ({ taskType: 'bulk-classify', tier: 'T4', seconds: 6, tokensIn: 180000, tokensOut: 24000, ok: true })),
+  // hard-reasoning: local was tried and is not good enough
+  ...rep(8, (i) => ({ taskType: 'hard-reasoning', tier: 'T2.5', seconds: 44, ok: i < 2 })),
+  ...rep(6, () => ({ taskType: 'hard-reasoning', tier: 'T4', seconds: 9, tokensIn: 40000, tokensOut: 14000, ok: true })),
+  // draft: free remote tier — costs nothing in money, still leaves the machine
+  ...rep(22, () => ({ taskType: 'draft', tier: 'T3', seconds: 5, tokensIn: 6000, tokensOut: 2000, ok: true })),
+];
+
+function run() {
+  const tariffs = {
+    local: { watts: Number($('#watts').value) || 0, pricePerKWh: Number($('#kwh').value) || 0 },
+    remote: { T4: { inPerM: Number($('#inp').value) || 0, outPerM: Number($('#outp').value) || 0 } },
+  };
+  const ledger = makeLedger(RUNS, tariffs);
+  const s = summary(ledger);
+  const c = classify(ledger);
+  const out = $('#out'); out.innerHTML = '';
+
+  const rd = el('div', 'reading');
+  rd.appendChild(el('div', 'k', 'THE MONTH'));
+  rd.appendChild(el('div', 's', reading(ledger)));
+  out.appendChild(rd);
+
+  const stats = el('div', 'stats');
+  const stat = (v, l, cls) => { const d = el('div', 'stat'); d.appendChild(el('div', 'n ' + (cls || ''), v)); d.appendChild(el('div', 'l', l)); return d; };
+  stats.appendChild(stat(String(s.runs), 'runs'));
+  stats.appendChild(stat(money(s.total), 'total'));
+  stats.appendChild(stat(money(s.localCost), 'electricity', 'good'));
+  stats.appendChild(stat(money(s.remoteCost), 'left the machine', 'bad'));
+  stats.appendChild(stat(Math.round(s.sovereignShareByRuns * 100) + '%', 'local by runs', 'good'));
+  stats.appendChild(stat(Math.round(s.sovereignShare * 100) + '%', 'local by money', 'warn'));
+  out.appendChild(stats);
+  out.appendChild(el('p', 'note', 'Those last two are the same month measured twice. The first is the one people quote; the second is the one on the bill.'));
+
+  // escaped spend, split three ways
+  const total = c.escapedTotal || 1;
+  const bar = el('div', 'bar');
+  const seg = (v, col) => { const i = el('i'); i.style.cssText = `width:${(v / total) * 100}%;background:${col}`; return i; };
+  bar.appendChild(seg(c.avoidable, 'var(--bad)'));
+  bar.appendChild(seg(c.unproven, 'var(--warn)'));
+  bar.appendChild(seg(c.necessary, 'var(--good)'));
+  out.appendChild(Object.assign(el('h3', null, 'Where the escaped spend went'), { style: 'font-size:15px;margin:26px 0 0' }));
+  out.appendChild(bar);
+  const lg = el('div', 'legend');
+  for (const [label, val, col] of [['avoidable', c.avoidable, 'var(--bad)'], ['unproven', c.unproven, 'var(--warn)'], ['necessary', c.necessary, 'var(--good)']]) {
+    const sp = el('span', null, `${label} ${money(val)}`);
+    sp.style.setProperty('--c', col);
+    sp.innerHTML = `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;background:${col}"></span>${label} ${money(val)}`;
+    lg.appendChild(sp);
+  }
+  out.appendChild(lg);
+
+  // per task type
+  const t = el('table');
+  t.innerHTML = '<thead><tr><th>Task type</th><th>Verdict</th><th style="text-align:right">Local runs</th><th style="text-align:right">Escaped</th><th style="text-align:right">Would cost local</th></tr></thead>';
+  const tb = el('tbody');
+  for (const ty of s.byType) {
+    const ev = c.evidence.find(e => e.taskType === ty.taskType);
+    const escapedHere = c.escaped.filter(e => e.taskType === ty.taskType);
+    const tr = el('tr');
+    const nm = el('td');
+    nm.appendChild(el('div', null, ty.taskType));
+    if (escapedHere.length) nm.appendChild(el('div', 'note', escapedHere[0].reason));
+    tr.appendChild(nm);
+    const v = el('td');
+    if (escapedHere.length) v.appendChild(el('span', 'pill ' + escapedHere[0].verdict, escapedHere[0].verdict));
+    else v.appendChild(el('span', 'note', 'never escaped'));
+    tr.appendChild(v);
+    tr.appendChild(el('td', 'n', `${ev.localOk}/${ev.localRuns}`));
+    tr.appendChild(el('td', 'n', money(ty.remoteCost)));
+    tr.appendChild(el('td', 'n', ev.meanCost === null ? '—' : money(ev.meanCost * escapedHere.length)));
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  const sc = el('div', 'scroll'); sc.appendChild(t); out.appendChild(sc);
+
+  if (c.worthTesting.length) {
+    out.appendChild(Object.assign(el('h3', null, 'Run these locally once, and find out'), { style: 'font-size:15px;margin:26px 0 0' }));
+    out.appendChild(el('p', 'note', 'These task types have escaped spend and no local track record. One local run each converts that column from a question into an answer.'));
+    for (const w of c.worthTesting) {
+      out.appendChild(el('div', 'note', `${w.taskType} — ${money(w.escapedSpend)} escaped, ${w.localRuns} local run(s) on record`));
+    }
+  }
+
+  out.appendChild(el('p', 'note', `Counts ${ledger.assumptions.counts}. Excludes ${ledger.assumptions.excludes.join('; ')}.`));
+}
+$('#run').onclick = run;
+run();
+</script>
+</body>
+</html>

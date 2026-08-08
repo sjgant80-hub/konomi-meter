@@ -1,0 +1,14 @@
+{
+  "name": "konomi-meter",
+  "version": "0.1.0",
+  "description": "Local-versus-cloud AI cost attribution by task type. Prices local runs instead of assuming they are free, and refuses to call escaped spend avoidable without evidence local could have done the work.",
+  "type": "module",
+  "main": "ledger.mjs",
+  "exports": { ".": "./ledger.mjs", "./tariff": "./tariff.mjs", "./escape": "./escape.mjs" },
+  "files": ["tariff.mjs", "ledger.mjs", "escape.mjs", "README.md", "LICENSE"],
+  "scripts": { "test": "node test.mjs" },
+  "keywords": ["finops", "llm-cost", "local-inference", "cost-attribution", "sovereign-ai", "token-cost"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/sjgant80-hub/konomi-meter.git" },
+  "homepage": "https://sjgant80-hub.github.io/konomi-meter/"
+}

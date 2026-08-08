@@ -1,0 +1,22 @@
+name: witness
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  workflow_dispatch:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: test suite
+        run: node test.mjs
+      # v0.2, not v0.1: reviewed-equivalent baselines were added after v0.1 was tagged.
+      # Cap must exceed each file's mutant count or "clean" is a truncation artifact (highest here: 30).
+      - name: mutation gate
+        uses: sjgant80-hub/witness@v0.2
+        with:
+          files: 'tariff.mjs ledger.mjs escape.mjs'
+          test-command: 'node test.mjs'
+          cap: '400'
